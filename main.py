@@ -114,6 +114,48 @@ class PreviewPanel(VerticalScroll):
         self._content.update("\n".join(preview_lines))
 
 
+class ErrorBar(Static):
+    """红色错误提示条：默认隐藏，解析失败时醒目展示友好错误信息。"""
+
+    DEFAULT_CSS = """
+    ErrorBar {
+        height: auto;
+        max-height: 6;
+        min-height: 0;
+        border: tall red;
+        background: #5c1a1a;
+        color: #ffd6d6;
+        padding: 0 1;
+        text-style: bold;
+        display: none;
+    }
+    ErrorBar.-visible {
+        display: block;
+    }
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__("", id="error_bar", **kwargs)
+
+    def show_error(self, stage: str, exc: BaseException) -> None:
+        exc_name = type(exc).__name__
+        msg = str(exc).strip() or "(无详细信息)"
+        first_line = msg.split("\n", 1)[0]
+        if len(first_line) > 120:
+            first_line = first_line[:117] + "..."
+        self.update(f"[{stage}] {exc_name}: {first_line}")
+        self.add_class("-visible")
+        self.display = True
+
+    def clear_error(self) -> None:
+        self.update("")
+        self.remove_class("-visible")
+        self.display = False
+
+
+DEBOUNCE_DELAY = 0.4
+
+
 class JsonToCsvApp(App):
     CSS_PATH = "app.tcss"
     TITLE = "JSON → CSV 转换器"
@@ -127,6 +169,7 @@ class JsonToCsvApp(App):
     json_file_path: str = ""
     output_path: reactive[str] = reactive("")
     last_rows: List[Dict[str, Any]] = []
+    parse_ok: reactive[bool] = reactive(True)
 
     def __init__(self, json_path: str, output: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
@@ -135,6 +178,8 @@ class JsonToCsvApp(App):
             self.json_data = json.load(f)
         base_name = os.path.splitext(os.path.basename(json_path))[0]
         self.output_path = output or f"{base_name}.csv"
+        self._refresh_timer: Optional[Any] = None
+        self._last_error: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -150,6 +195,7 @@ class JsonToCsvApp(App):
                 )
                 input_area.show_line_numbers = True
                 yield input_area
+                yield ErrorBar()
                 yield PreviewPanel(id="preview_panel")
                 with Horizontal(id="bottom_bar"):
                     yield Label(f"📄 输入: {self.json_file_path}", id="file_label")
@@ -160,11 +206,11 @@ class JsonToCsvApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._refresh_preview()
+        self.call_after_refresh(self._apply_pipeline_safe)
 
     @on(Button.Pressed, "#refresh_btn")
     def on_refresh_clicked(self, event: Button.Pressed) -> None:
-        self._refresh_preview()
+        self._apply_now()
 
     @on(Button.Pressed, "#export_btn")
     def on_export_clicked(self, event: Button.Pressed) -> None:
@@ -173,6 +219,10 @@ class JsonToCsvApp(App):
     @on(Input.Changed, "#output_input")
     def on_output_changed(self, event: Input.Changed) -> None:
         self.output_path = event.value
+
+    @on(TextArea.Changed, "#mapping_input")
+    def on_mapping_changed(self, event: TextArea.Changed) -> None:
+        self._schedule_refresh(DEBOUNCE_DELAY)
 
     @on(Key)
     def on_key(self, event: Key) -> None:
@@ -183,13 +233,39 @@ class JsonToCsvApp(App):
             event.stop()
             self.action_refresh_preview()
 
+    def _cancel_pending_refresh(self) -> None:
+        if self._refresh_timer is not None:
+            try:
+                self._refresh_timer.stop()
+            except Exception:
+                pass
+            self._refresh_timer = None
+
+    def _schedule_refresh(self, delay: float = DEBOUNCE_DELAY) -> None:
+        self._cancel_pending_refresh()
+        self._refresh_timer = self.set_timer(delay, self._apply_pipeline_safe)
+
+    def _apply_now(self) -> None:
+        self._cancel_pending_refresh()
+        self._apply_pipeline_safe()
+
     def action_refresh_preview(self) -> None:
-        self._refresh_preview()
+        self._apply_now()
 
     def action_export_csv(self) -> None:
-        self._refresh_preview()
+        self._apply_now()
         if not self.output_path:
             self.notify("请先设置输出文件路径", severity="error", timeout=3)
+            return
+        if not self.parse_ok:
+            self.notify(
+                "❌ 当前规则存在错误，已阻止导出，请修正红色提示后重试",
+                severity="error",
+                timeout=5,
+            )
+            return
+        if not self.last_rows:
+            self.notify("⚠️ 没有可导出的数据行", severity="warning", timeout=3)
             return
         try:
             csv_text = rows_to_csv(self.last_rows)
@@ -203,7 +279,7 @@ class JsonToCsvApp(App):
                 timeout=5,
             )
         except Exception as e:
-            self.notify(f"❌ 导出失败: {e}", severity="error", timeout=5)
+            self.notify(f"❌ 导出失败: {type(e).__name__}: {e}", severity="error", timeout=5)
 
     def _get_mapping_text(self) -> str:
         try:
@@ -211,13 +287,30 @@ class JsonToCsvApp(App):
         except Exception:
             return DEFAULT_MAPPING_HINT
 
-    def _refresh_preview(self) -> None:
+    def _get_error_bar(self) -> ErrorBar:
+        return self.query_one("#error_bar", ErrorBar)
+
+    def _update_status_label(self, ok: bool, row_count: int = 0, col_count: int = 0) -> None:
+        try:
+            file_label = self.query_one("#file_label", Label)
+            if ok:
+                file_label.update(
+                    f"📄 {self.json_file_path}  |  📊 {row_count} 行 × {col_count} 列  |  ✅ 规则有效"
+                )
+            else:
+                file_label.update(f"📄 {self.json_file_path}  |  ❌ 规则有误")
+        except Exception:
+            pass
+
+    def _apply_pipeline_safe(self) -> None:
+        stage = "解析规则"
         try:
             input_text = self._get_mapping_text()
             parsed = parse_input(input_text)
             data = self.json_data
 
             if parsed['jsonpath']:
+                stage = "应用 JSONPath"
                 from path_parser import parse_jsonpath
                 jp_result = parse_jsonpath(data, parsed['jsonpath'])
                 if jp_result:
@@ -226,6 +319,7 @@ class JsonToCsvApp(App):
                     else:
                         data = jp_result
 
+            stage = "扁平化数据"
             rows = flatten_to_rows(
                 data,
                 expand_arrays=True,
@@ -233,28 +327,42 @@ class JsonToCsvApp(App):
             )
 
             if parsed['pivot']:
+                stage = "行列转换 (pivot)"
                 key_col, value_col = parsed['pivot']
                 rows = pivot_object_array(rows, key_col, value_col)
 
             if parsed['mapping']:
+                stage = "应用列映射"
                 rows = apply_mapping(rows, parsed['mapping'])
 
-            self.last_rows = rows
+            stage = "生成 CSV"
             csv_text = rows_to_csv(rows)
+
+            self.last_rows = rows
+            self._last_error = None
+            self.parse_ok = True
+            self._get_error_bar().clear_error()
             preview = self.query_one(PreviewPanel)
             preview.update_preview(csv_text, len(rows))
 
             row_count = len(rows)
             col_count = len(set().union(*[set(r.keys()) for r in rows])) if rows else 0
-            file_label = self.query_one("#file_label", Label)
-            file_label.update(
-                f"📄 {self.json_file_path}  |  📊 {row_count} 行 × {col_count} 列"
-            )
+            self._update_status_label(True, row_count, col_count)
 
-        except Exception as e:
-            preview = self.query_one(PreviewPanel)
-            preview.update_preview(f"⚠️  处理出错: {e}", 0)
-            self.notify(f"处理出错: {e}", severity="warning", timeout=3)
+        except Exception as exc:
+            self.last_rows = []
+            self._last_error = f"[{stage}] {type(exc).__name__}: {exc}"
+            self.parse_ok = False
+            try:
+                self._get_error_bar().show_error(stage, exc)
+            except Exception:
+                pass
+            try:
+                self.query_one(PreviewPanel).update_preview("(规则有误，已暂停预览)", 0)
+            except Exception:
+                pass
+            self._update_status_label(False)
+            self.notify(f"规则解析失败: {stage}", severity="error", timeout=3)
 
 
 def main():
