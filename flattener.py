@@ -39,11 +39,17 @@ def flatten_object(
     return items
 
 
+def _sanitize_path(path: str) -> str:
+    parts = path.split('.')
+    return '.'.join(_sanitize_key(p) for p in parts if p)
+
+
 def _find_array_paths(data: Any, prefix: str = '') -> List[str]:
     paths: List[str] = []
     if isinstance(data, dict):
         for k, v in data.items():
-            child_prefix = f"{prefix}.{k}" if prefix else k
+            sanitized_k = _sanitize_key(k)
+            child_prefix = f"{prefix}.{sanitized_k}" if prefix else sanitized_k
             if isinstance(v, list):
                 paths.append(child_prefix)
             paths.extend(_find_array_paths(v, child_prefix))
@@ -69,9 +75,18 @@ def _get_value_at_path(data: Any, path: str) -> Any:
     current = data
     for part in parts:
         if isinstance(current, dict):
-            if part not in current:
-                return None
-            current = current[part]
+            if part in current:
+                current = current[part]
+            else:
+                matched = None
+                for k in current.keys():
+                    if _sanitize_key(k) == part:
+                        matched = k
+                        break
+                if matched is not None:
+                    current = current[matched]
+                else:
+                    return None
         elif isinstance(current, list):
             if not part.isdigit():
                 return None
@@ -192,9 +207,11 @@ def flatten_to_rows(
     array_paths = _dedup_paths(_find_array_paths(data))
     array_paths = _sort_paths_by_depth(array_paths)
 
-    if primary_array and primary_array in array_paths:
-        array_paths.remove(primary_array)
-        array_paths.insert(0, primary_array)
+    if primary_array:
+        primary_array = _sanitize_path(primary_array)
+        if primary_array in array_paths:
+            array_paths.remove(primary_array)
+            array_paths.insert(0, primary_array)
 
     rows = [dict(base_flat)]
 
@@ -217,7 +234,12 @@ def pivot_object_array(
     if not rows:
         return rows
 
-    group_cols = [c for c in rows[0].keys() if c not in (key_col, value_col)]
+    exclude_suffixes = ('_index', '.index')
+    group_cols = [
+        c for c in rows[0].keys()
+        if c not in (key_col, value_col)
+        and not any(c.endswith(suffix) for suffix in exclude_suffixes)
+    ]
 
     grouped: Dict[Tuple, Dict[str, Any]] = {}
     for row in rows:
