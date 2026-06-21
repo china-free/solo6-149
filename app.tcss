@@ -1,0 +1,96 @@
+#json_tree_panel {
+    width: 40%;
+    height: 100%;
+    border: solid green;
+    background: $panel;
+}
+
+#right_panel {
+    width: 60%;
+    height: 100%;
+}
+
+#mapping_input {
+    height: 40%;
+    border: solid blue;
+    background: $panel;
+}
+
+#input_label {
+    height: 1;
+    padding: 0 1;
+    background: $boost;
+    color: $text;
+}
+
+#preview_panel {
+    height: 1fr;
+    border: solid yellow;
+    background: $panel;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+#preview_content {
+    padding: 0 1;
+    color: $text;
+    text-style: not bold;
+}
+
+#bottom_bar {
+    height: 3;
+    padding: 0 1;
+    background: $boost;
+    align-vertical: middle;
+}
+
+#file_label {
+    width: 1fr;
+}
+
+#out_label {
+    width: auto;
+    padding: 0 1;
+}
+
+#output_input {
+    width: 30;
+}
+
+#refresh_btn {
+    margin: 0 1;
+    min-width: 16;
+}
+
+#export_btn {
+    margin: 0 1;
+    min-width: 16;
+}
+
+Tree {
+    background: $panel;
+}
+
+Tree > .tree--guides {
+    color: $success;
+}
+
+Tree .tree--label {
+    color: $text;
+}
+
+Label {
+    color: $text;
+}
+
+Header {
+    text-style: bold;
+}
+
+Footer {
+    background: $boost;
+}
+
+Footer > .footer--key {
+    background: $accent;
+}

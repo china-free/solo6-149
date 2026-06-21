@@ -1,0 +1,63 @@
+{
+  "company": "示例科技有限公司",
+  "founded": 2020,
+  "employees": [
+    {
+      "id": 1001,
+      "name": "张三",
+      "department": "研发部",
+      "salary": 15000,
+      "profile": {
+        "age": 28,
+        "city": "北京",
+        "skills": ["Python", "Go", "Rust"]
+      },
+      "projects": [
+        {"name": "Alpha", "role": "负责人", "hours": 120},
+        {"name": "Beta", "role": "开发", "hours": 80}
+      ],
+      "attributes": [
+        {"key": "level", "value": "高级"},
+        {"key": "team", "value": "后端组"}
+      ]
+    },
+    {
+      "id": 1002,
+      "name": "李四",
+      "department": "产品部",
+      "salary": 18000,
+      "profile": {
+        "age": 32,
+        "city": "上海",
+        "skills": ["产品设计", "用户研究", "数据分析"]
+      },
+      "projects": [
+        {"name": "Gamma", "role": "产品经理", "hours": 200}
+      ],
+      "attributes": [
+        {"key": "level", "value": "资深"},
+        {"key": "team", "value": "B端产品"}
+      ]
+    },
+    {
+      "id": 1003,
+      "name": "王五",
+      "department": "研发部",
+      "salary": 12000,
+      "profile": {
+        "age": 24,
+        "city": "深圳",
+        "skills": ["JavaScript", "React", "Vue"]
+      },
+      "projects": [
+        {"name": "Alpha", "role": "开发", "hours": 150},
+        {"name": "Beta", "role": "开发", "hours": 100},
+        {"name": "Delta", "role": "负责人", "hours": 60}
+      ],
+      "attributes": [
+        {"key": "level", "value": "中级"},
+        {"key": "team", "value": "前端组"}
+      ]
+    }
+  ]
+}

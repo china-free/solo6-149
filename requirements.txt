@@ -1,0 +1,2 @@
+textual>=0.47.0
+jsonpath-ng>=1.6.0
